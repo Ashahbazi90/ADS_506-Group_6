@@ -1,0 +1,628 @@
+---
+title: "Household Energy Consumption Analysis "
+author: "Arya Shahbazi, Parisa Kamizi, and Mirna Philip"
+date: "2023-11-12"
+output: pdf_document
+---
+# **Exploring Household Energy Consumption: Time-Series Analysis, Forecasting, and Sustainability Insights**
+#### The primary objective of this project is to assess time-series data related to household energy consumption, sourced from Kaggle under the title "Household Energy Data - Time Series" (https://www.kaggle.com/datasets/jaganadhg/house-hold-energy-data?select=D202.csv). The dataset, obtained from an apartment in San Jose over a two-year period from October 22nd, 2016, to October 24th, 2018, captures electric usage data through a smart meter at 15-minute intervals. With eight attributes including Type, Date, Start time, End time, Usage, Units, Cost, and Notes, the goal is to analyze consumption trends, identify peak usage times, develop time-series forecasting models, explore cost-saving options, and mitigate environmental impact. The dataset, comprising 70,368 rows, aims to contribute to both personal and professional growth by enhancing data analysis skills through real-world applications. The energy provider, PG&E, shared this valuable dataset, emphasizing the project's focus on informed energy decisions and sustainability.
+
+| Attribute   | Description                                        |
+|-------------|----------------------------------------------------|
+| TYPE        | Information column with the value 'Electric usage' for all observations. |
+| DATE        | Date of electric consumption. No timestamp in this field. |
+| START TIME  | Start time of the consumption.                     |
+| END TIME    | End time of the consumption.                       |
+| USAGE       | Consumption in kWh.                                |
+| UNITS       | Denotes the measurement unit, which is kWh for all observations. |
+| COST        | Cost of consumption in $.                           |
+| NOTES       | Mostly an empty column.                            |
+```{r}
+library(readr)
+```
+
+# **Importing Data Frame**
+```{r}
+# Uploading the data frame 
+df <- read.csv("D202.csv", sep = ",")
+# Display the first few rows of the data frame
+head(df, 10)
+
+```
+# **Data Preprocessing**
+```{r}
+# Using str to view the structure of the data frame
+str(df)
+```
+```{r}
+# Getting summary statistics for each variable in the data frame.
+summary(df)
+```
+
+```{r}
+# Print the names of variables
+cat("The names of variables are:", names(df), "\n")
+
+# Using dim to check the number of rows and columns in the data frame.
+cat("the number of rows and columns in the data frame:", dim(df), "\n")
+```
+
+```{r}
+# Checking for missing values in each column
+colSums(is.na(df))
+```
+
+
+# **Cleaning Data Frame**
+```{r}
+#Dropping 'Notes' Column from our dataset
+data <- subset(df, select = -c(NOTES))
+head(data,3)
+```
+```{r}
+# Double checking for missing values
+colSums(is.na(data))
+```
+
+```{r}
+# Checking for duplicate rows
+any(duplicated(data))
+```
+```{r}
+# Convert "DATE" to Date type
+data$DATE <- as.Date(data$DATE, format = "%m/%d/%Y")
+str(data)
+```
+```{r}
+# Remove the currency symbol from "COST" and convert it to numeric
+data$COST <- as.numeric(gsub("\\$", "", data$COST))
+str(data)
+```
+```{r}
+# Combine "DATE," "START.TIME," and "END.TIME" into a single datetime column
+data$DATETIME <- as.POSIXct(paste(data$DATE, data$START.TIME), format="%Y-%m-%d %H:%M")
+str(data)
+```
+```{r}
+# Check for outliers in the USAGE and COST columns
+boxplot(data$USAGE, main = "Boxplot of USAGE")
+boxplot(data$COST, main = "Boxplot of COST")
+```
+
+```{r}
+# Function to cap outliers
+cap_outliers <- function(column) {
+  q1 <- quantile(column, 0.25)
+  q3 <- quantile(column, 0.75)
+  iqr <- q3 - q1
+  lower_bound <- q1 - 1.5 * iqr
+  upper_bound <- q3 + 1.5 * iqr
+
+  # Cap values below lower bound
+  column[column < lower_bound] <- lower_bound
+
+  # Cap values above upper bound
+  column[column > upper_bound] <- upper_bound
+
+  return(column)
+}
+
+# Cap outliers in USAGE and COST
+data$USAGE <- cap_outliers(data$USAGE)
+data$COST <- cap_outliers(data$COST)
+
+# double checking for outliers in the USAGE and COST columns
+boxplot(data$USAGE, main = "Boxplot of USAGE")
+boxplot(data$COST, main = "Boxplot of COST")
+```
+# **Exploratory Data Analysis (EDA)**
+```{r}
+# Loading librarys
+library(ggplot2)
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(lubridate)
+
+```
+```{r}
+# Create a dataframe with USAGE and COST
+cor_data <- data[, c("USAGE", "COST")]
+
+# Calculate correlation matrix
+correlation_matrix <- cor(cor_data, use = "complete.obs")
+
+# Create a heatmap
+corrplot(correlation_matrix, method = "color", type = "upper", addCoef.col = "white")
+```
+```{r}
+# Create a normalized bar graph for the "USAGE" variable
+ggplot(data, aes(x = USAGE)) +
+  geom_bar(aes(y = ..count.. / sum(..count..)), fill = "blue", color = "black") +
+  labs(title = "Normalized Distribution of Electric Usage", x = "Usage (kWh)", y = "Proportion") +
+  theme_minimal()
+
+# Create a normalized bar graph for the "COST" variable
+ggplot(data, aes(x = COST)) +
+  geom_bar(aes(y = ..count.. / sum(..count..)), fill = "green", color = "black") +
+  labs(title = "Normalized Distribution of Electric Cost", x = "Cost ($)", y = "Proportion") +
+  theme_minimal()
+```
+```{r}
+# Combine "COST" and "USAGE" into a single data frame for plotting
+combined_data <- rbind(
+  data.frame(variable = "COST", value = data$COST),
+  data.frame(variable = "USAGE", value = data$USAGE)
+)
+
+# Create a normalized bar graph with overlay
+ggplot(combined_data, aes(x = value, fill = variable)) +
+  geom_bar(aes(y = ..count.. / sum(..count..)), position = "dodge", color = "black") +
+  labs(title = "Normalized Distribution of Electric Cost and Usage", x = "Value", y = "Proportion") +
+  scale_fill_manual(values = c("COST" = "green", "USAGE" = "blue")) +
+  theme_minimal()
+```
+
+
+
+```{r}
+# Scatter plot between USAGE and COST
+plot(data$USAGE, data$COST, main="Scatter plot of USAGE vs COST", xlab="Usage (kWh)", ylab="Cost ($)")
+```
+
+
+```{r}
+# Histogram of USAGE
+hist(data$USAGE, main="Histogram of Electric USAGE", xlab="Usage (kWh)", breaks=50)
+```
+
+```{r}
+# Create a time series object for the "USAGE" and "COST" variables
+ts_data_usage <- ts(data$USAGE, frequency = 48)  # Assuming data is recorded every 15 minutes (48 times a day)
+ts_data_cost <- ts(data$COST, frequency = 48)  # Assuming data is recorded every 15 minutes (48 times a day)
+
+# Aggregate the time series to daily averages
+daily_avg <- aggregate(ts_data_usage, FUN = mean, k = 48)
+
+# Plot the aggregated time series
+plot(daily_avg, main = "Daily Average Energy Consumption", ylab = "Daily Usage (kWh)", xlab = "Time")
+```
+```{r}
+# Create a time series object for the "USAGE" and "COST" variables
+ts_data_usage <- ts(data$USAGE, frequency = 48)  # Assuming data is recorded every 15 minutes (48 times a day)
+ts_data_cost <- ts(data$COST, frequency = 48)  # Assuming data is recorded every 15 minutes (48 times a day)
+
+# Aggregate the time series to daily averages
+daily_avg_cost <- aggregate(ts_data_cost, FUN = mean, k = 48)
+
+# Plot the daily average cost
+plot(time(daily_avg_cost), daily_avg_cost,
+     type = "l", lty = 1, col = "blue",
+     xlab = "Time", ylab = "Daily Cost ($)",
+     main = "Daily Average Cost")
+```
+
+```{r}
+# Combine the data into a single data frame
+daily_data <- data.frame(
+  DATETIME = time(daily_avg),
+  USAGE = daily_avg,
+  COST = daily_avg_cost
+)
+
+# Plot using ggplot2
+ggplot(daily_data, aes(x = DATETIME)) +
+  geom_line(aes(y = USAGE, color = "Usage"), size = .3) +
+  geom_line(aes(y = COST, color = "Cost"), size = .3) +
+  labs(title = "Daily Average Energy Consumption", y = "Value") +
+  scale_color_manual(values = c("Usage" = "blue", "Cost" = "red"))
+
+```
+# **Feature Engineering** 
+## Temporal Features:
+```{r}
+# Extracting Hour of the Day from DATETIME
+data$HourOfDay <- hour(data$DATETIME)
+
+# Extracting Day of the Week from DATETIME
+data$DayOfWeek <- weekdays(data$DATETIME)
+
+# Extracting Month from DATETIME
+data$Month <- months(data$DATETIME)
+
+# Extracting Season from DATETIME
+data$Season <- as.factor(quarter(data$DATETIME))
+
+# Extracting Year from DATETIME
+data$Year <- year(data$DATETIME)
+#str(data)
+#data
+```
+```{r}
+
+write.csv(data, "processed_data.csv", row.names = FALSE)
+```
+
+```{r}
+processed_data <- read.csv("processed_data.csv")
+# Create a numeric index vector
+numeric_index <- 1:nrow(processed_data)
+
+# Set the numeric index as row names
+row.names(processed_data) <- numeric_index
+
+# Convert DATE to Date class
+processed_data$DATE <- as.Date(processed_data$DATE)
+
+# Convert DATETIME to POSIXct class
+processed_data$DATETIME <- as.POSIXct(processed_data$DATETIME, format = "%Y-%m-%d %H:%M:%S")
+processed_data$Season <- factor(processed_data$Season)
+#processed_data
+# Print the structure of the modified data frame
+str(processed_data)
+```
+
+```{r}
+# Visualization by Hour of the Day
+ggplot(data, aes(x = HourOfDay, y = USAGE)) +
+  geom_line() +
+  labs(title = "Electric Usage by Hour of the Day", y = "Usage (kWh)")
+
+# Visualization by Day of the Week
+ggplot(data, aes(x = factor(DayOfWeek, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = USAGE, fill = Season)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Electric Usage by Day of the Week", y = "Average Usage (kWh)")+
+  scale_fill_manual(values = c("1" = "lightblue", "2" = "lightgreen", "3" = "lightcoral", "4" = "lightgoldenrod"),
+                    labels = c("Spring", "Summer", "Fall", "Winter"),
+                    name = "Seasons")
+
+# Visualization by Month
+ggplot(data, aes(x = Month, y = USAGE, fill = Season)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Electric Usage by Month", y = "Average Usage (kWh)") + 
+  scale_fill_manual(values = c("1" = "lightblue", "2" = "lightgreen", "3" = "lightcoral", "4" = "lightgoldenrod"),
+                    labels = c("Spring", "Summer", "Fall", "Winter"),
+                    name = "Seasons")
+
+# Visualization by Season with custom labels
+ggplot(data, aes(x = Season, y = USAGE, fill = Season)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Electric Usage by Season", y = "Average Usage (kWh)") +
+  scale_fill_manual(values = c("1" = "lightblue", "2" = "lightgreen", "3" = "lightcoral", "4" = "lightgoldenrod"),
+                    labels = c("Spring", "Summer", "Fall", "Winter"),
+                    name = "Seasons")
+
+```
+```{r}
+# Visualization by Hour of the Day
+ggplot(processed_data, aes(x = HourOfDay, y = USAGE)) +
+  geom_line() +
+  labs(title = "Electric Usage by Hour of the Day", y = "Usage (kWh)")
+
+# Visualization by Day of the Week
+ggplot(processed_data, aes(x = factor(DayOfWeek, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = USAGE, fill = Season)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Electric Usage by Day of the Week", y = "Average Usage (kWh)")+
+  scale_fill_manual(values = c("1" = "lightblue", "2" = "lightgreen", "3" = "lightcoral", "4" = "lightgoldenrod"),
+                    labels = c("Spring", "Summer", "Fall", "Winter"),
+                    name = "Seasons")
+
+# Visualization by Month
+ggplot(processed_data, aes(x = Month, y = USAGE, fill = Season)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Electric Usage by Month", y = "Average Usage (kWh)") + 
+  scale_fill_manual(values = c("1" = "lightblue", "2" = "lightgreen", "3" = "lightcoral", "4" = "lightgoldenrod"),
+                    labels = c("Spring", "Summer", "Fall", "Winter"),
+                    name = "Seasons")
+
+# Visualization by Season with custom labels
+ggplot(processed_data, aes(x = Season, y = USAGE, fill = Season)) +
+  geom_bar(stat = "summary", fun = "mean") +
+  labs(title = "Average Electric Usage by Season", y = "Average Usage (kWh)") +
+  scale_fill_manual(values = c("1" = "lightblue", "2" = "lightgreen", "3" = "lightcoral", "4" = "lightgoldenrod"),
+                    labels = c("Spring", "Summer", "Fall", "Winter"),
+                    name = "Seasons")
+
+```
+
+
+
+```{r}
+# Correlation between Hour of the Day and USAGE
+correlation_hour <- cor(data$HourOfDay, data$USAGE, use = "complete.obs")
+print(paste("Correlation between Hour of the Day and USAGE:", correlation_hour))
+
+# Correlation between Day of the Week and USAGE
+day_of_week_numeric <- as.numeric(factor(data$DayOfWeek, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")))
+correlation_day <- cor(day_of_week_numeric, data$USAGE, use = "complete.obs")
+print(paste("Correlation between Day of the Week and USAGE:", correlation_day))
+
+# Correlation between Month and USAGE
+month_numeric <- as.numeric(factor(data$Month, levels = month.name))
+correlation_month <- cor(month_numeric, data$USAGE, use = "complete.obs")
+print(paste("Correlation between Month and USAGE:", correlation_month))
+
+# Correlation between Season and USAGE
+correlation_season <- cor(as.numeric(data$Season), data$USAGE, use = "complete.obs")
+print(paste("Correlation between Season and USAGE:", correlation_season))
+
+```
+
+## Usage Patterns:
+```{r}
+# Creating Lag Features to capture previous usage values
+data$Lag1 <- lag(data$USAGE, 1)  # Lag of 1 time period
+data$Lag2 <- lag(data$USAGE, 2)  # Lag of 2 time periods
+```
+```{r}
+# Explore correlation between USAGE and Lag1
+correlation_lag1 <- cor(data$USAGE, data$Lag1, use = "complete.obs")
+print(paste("Correlation between USAGE and Lag1:", correlation_lag1))
+
+# Explore correlation between USAGE and Lag2
+correlation_lag2 <- cor(data$USAGE, data$Lag2, use = "complete.obs")
+print(paste("Correlation between USAGE and Lag2:", correlation_lag2))
+
+
+# Create a correlation matrix for USAGE, Lag1, and Lag2
+lag_cor_matrix <- cor(data[, c("COST", "USAGE", "Lag1", "Lag2")], use = "complete.obs")
+```
+```{r}
+library(zoo)
+
+```
+
+
+```{r}
+#Checking for the missing values
+colSums(is.na(data))
+```
+
+
+```{r}
+# Backward fill (Next Observation Carried Backward)
+data$Lag1 <- na.locf(data$Lag1, fromLast = TRUE)
+data$Lag2 <- na.locf(data$Lag2, fromLast = TRUE)
+```
+
+
+```{r}
+#Re-checking the null values
+colSums(is.na(data))
+```
+
+
+```{r}
+# Create a heatmap
+corrplot(lag_cor_matrix, method = "color", type = "upper", addCoef.col = "white")
+
+```
+# **Data Partition**
+```{r}
+# Sort the data by date in ascending order
+data <- data[order(data$DATE), ]
+```
+```{r}
+#data
+```
+
+```{r}
+
+# Data resampling by day
+data_daily <- aggregate(USAGE ~ as.Date(DATETIME), data = data, mean)
+# Calculate rolling mean and rolling standard deviation
+rolling_mean <- zoo::rollmean(data_daily$USAGE, k = 5, fill = NA)
+rolling_std <- zoo::rollapply(data_daily$USAGE, width = 5, FUN = sd, fill = NA)
+
+# Plot
+par(mfrow = c(2, 1), mar = c(4, 4, 2, 1), oma = c(0, 0, 2, 0))
+plot(data_daily$USAGE, type = 'l', col = 'green', ylab = 'kW', xlab = '')
+lines(rolling_mean, col = 'blue', lty = 2)
+legend('topright', legend = c('House overall', 'Rolling mean'), col = c('green', 'blue'), lty = c(1, 2))
+
+plot(rolling_std, type = 'l', col = 'black', ylab = 'kW', xlab = 'Date')
+legend('topright', legend = 'Rolling Std', col = 'black', lty = 1)
+
+# Adjust plot margins and add grid lines
+par(mar = c(4, 4, 2, 1) + 0.1)
+mtext('Date', side = 1, line = 2, outer = TRUE)
+mtext('kW', side = 2, line = 2, outer = TRUE)
+grid(col = 'gray')
+
+```
+```{r}
+
+data_daily$DateFormatted <- as.Date(data_daily$`as.Date(DATETIME)`, format = "%m/%d/%Y")
+
+#data_daily
+```
+```{r}
+write.csv(data_daily, "data_daily.csv", row.names = FALSE)
+```
+```{r}
+data_d <- read.csv("data_daily.csv")
+#data_d
+# Create a numeric index vector
+#numeric_index <- 1:nrow(data_d)
+
+# Set the numeric index as row names
+#row.names(data_d) <- numeric_index
+
+# Convert DATE to Date class
+data_d$as.Date.DATETIME. <- as.Date(data_d$as.Date.DATETIME.)
+data_d$DateFormatted <- as.Date(data_d$DateFormatted)
+data_d$DateFormatted <- as.Date(data_d$as.Date.DATETIME., format = "%m/%d/%Y")
+
+
+# Convert DATETIME to POSIXct class
+#data_d
+# Print the structure of the modified data frame
+str(data_d)
+```
+
+# Modeling
+
+
+
+```{r}
+library(fable)
+library(dplyr)
+library(ggplot2)
+
+train_prop <- 0.8
+
+# Determine the row index for the split
+split_index <- floor(nrow(data_d) * train_prop)
+
+# Create the training dataset
+train_data <- data_d %>%  slice(1:split_index)
+#train_data 
+
+# Create the validation dataset
+validation_data <- data_d %>% slice((split_index + 1):nrow(data_d))
+#validation_data
+
+```
+```{r}
+library(tsibble)
+
+validation_data_tsibble <- tsibble(
+  time = validation_data$DateFormatted,
+  USAGE = validation_data$USAGE
+)
+#validation_data_tsibble
+```
+
+
+```{r}
+data_daily2 <- train_data %>% select(-1)
+#data_daily2
+library(tsibble)
+
+library(fable)
+
+data3 <- tsibble(data_daily2, index = DateFormatted)
+
+
+
+models <- data3 |> model(
+      naive = NAIVE(USAGE),
+      snaive = SNAIVE(USAGE),
+      arima = ARIMA(USAGE),
+      ets = ETS(USAGE),
+      #ets2 = ETS(USAGE ~ trend() + season()),
+      my_arima = ARIMA(USAGE ~ 1 + pdq(1, 1, 1) + PDQ(1, 1, 0))
+
+)
+forecasts <- models |> forecast(h = nrow(validation_data))
+
+forecasts
+
+autoplot(forecasts, level = NULL) +
+  geom_line(aes(y = USAGE), data = data_daily2 %>% tail(1000))+
+  geom_line(aes(y = USAGE, color='ground truth'), data = validation_data)+
+    labs(title = "Daily Forecast, Holt-Winter Model", x = "Date", y = "Electric Usage") 
+
+autoplot(forecasts, level = NULL) +
+  geom_line(aes(y = USAGE), data = data_daily2 %>% tail(100))+
+    geom_line(aes(y = USAGE, color='ground truth'), data = validation_data)+
+    labs(title = "Daily Forecast, Holt-Winter Model", x = "Date", y = "Electric Usage")
+
+options(digits = 3)
+
+accuracy_results <- accuracy(forecasts, validation_data_tsibble)
+
+# Print or inspect the accuracy results
+print(accuracy_results)
+
+
+```
+
+```{r}
+
+
+library(forecast)
+library(ggplot2)
+
+# Combine train and validation data for modeling
+data <- rbind(train_data, validation_data)
+
+# Fit models
+fit_arima <- forecast::auto.arima(data$USAGE)
+fit_my_arima <- forecast::Arima(data$USAGE, order=c(1, 1, 1), seasonal=c(1, 1, 0))
+
+# Make forecasts
+forecasts_arima <- forecast::forecast(fit_arima, h = nrow(validation_data))
+forecasts_my_arima <- forecast::forecast(fit_my_arima, h = nrow(validation_data))
+
+# Extract confidence intervals
+conf_int_arima <- as.data.frame(forecasts_arima$lower[,1:2])  # Extracting 80% and 95% confidence intervals
+conf_int_my_arima <- as.data.frame(forecasts_my_arima$lower[,1:2])
+
+# Combine confidence intervals into a data frame
+conf_int_df <- data.frame(
+  DateFormatted = validation_data$DateFormatted,
+  ARIMA_lower_80 = conf_int_arima[,1],
+  ARIMA_upper_80 = conf_int_arima[,2],
+  MyARIMA_lower_80 = conf_int_my_arima[,1],
+  MyARIMA_upper_80 = conf_int_my_arima[,2]
+)
+
+# Plot the confidence intervals
+ggplot() +
+  geom_ribbon(data = conf_int_df, aes(x = DateFormatted, ymin = ARIMA_lower_80, ymax = ARIMA_upper_80), alpha = 0.3, fill = "red", color = "red", linetype = "solid", name = "ARIMA") +
+  geom_ribbon(data = conf_int_df, aes(x = DateFormatted, ymin = MyARIMA_lower_80, ymax = MyARIMA_upper_80), alpha = 0.3, fill = "blue", color = "blue", linetype = "solid", name = "MyARIMA") +
+  labs(title = "Confidence Intervals for Time Series Models", x = "Date", y = "Electric Usage") +
+  theme_minimal()
+#print(conf_int_df)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+library(tsibble)
+
+library(fable)
+
+data3b <- tsibble(data_daily2, index = DateFormatted)
+
+
+
+# Convert to weekly
+data_weekly <- data3b %>%
+  index_by(week = ~ yearweek(.)) %>%
+  summarise(weekly_usage = sum(USAGE, na.rm = TRUE))
+
+
+data3b <- tsibble(data_weekly, index = week)
+
+# Model fitting and forecasting
+models <- data3b |> model(
+  naive = NAIVE(weekly_usage),
+  snaive = SNAIVE(weekly_usage),
+  arima = ARIMA(weekly_usage),
+  ets = ETS(weekly_usage),
+  my_arima = ARIMA(weekly_usage ~ 1 + pdq(2, 1, 2) + PDQ(2, 1, 0))
+)
+
+forecasts <- models |> forecast(h = nrow(validation_data))
+forecasts
+
+# Plotting
+autoplot(forecasts, level = NULL) +
+  geom_line(aes(y = weekly_usage), data = data_weekly %>% tail(100)) +
+  labs(title = "Weekly Forecast", color='ground truth', x = "Date", y = "Electric Usage")
+
+
+```
+
